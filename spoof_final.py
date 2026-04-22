@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 import carla
+import can
+import cantools
 import matplotlib.pyplot as plt
 
 try:
@@ -32,7 +34,7 @@ DIST_CSV = OUT_DIR / "visual_distance.csv"
 PATH_PNG = OUT_DIR / "visual_paths.png"
 STEER_PNG = OUT_DIR / "visual_steer.png"
 DIST_PNG = OUT_DIR / "visual_distance.png"
-
+DBC_FILE = Path(__file__).resolve().parent / "dbc_input.dbc"
 
 def write_csv(path, rows, fieldnames):
     with open(path, "w", newline="") as f:
@@ -40,6 +42,22 @@ def write_csv(path, rows, fieldnames):
         writer.writeheader()
         writer.writerows(rows)
 
+def clamp_percent(value):
+    return max(0, min(100, int(round(value * 100))))
+
+
+def send_can_control(bus, msg_def, steer, throttle, brake):
+    payload = msg_def.encode({
+        "Steer": int(round(steer * 127)),
+        "Throttle": clamp_percent(throttle),
+        "Brake": clamp_percent(brake),
+    })
+    msg = can.Message(
+        arbitration_id=msg_def.frame_id,
+        data=payload,
+        is_extended_id=False,
+    )
+    bus.send(msg)
 
 def euclid(a, b):
     return math.sqrt(
@@ -111,6 +129,11 @@ def run_visual_experiment():
     client.set_timeout(60.0)
     world = client.load_world(MAP_NAME)
 
+    dbc = cantools.database.load_file(DBC_FILE)
+    msg_def = dbc.get_message_by_name("TheMessage")
+    bus = can.Bus(channel="vcan0", interface="socketcan")
+ 
+
     blueprint = world.get_blueprint_library().filter("vehicle.tesla.model3")[0]
     spawn_points = world.get_map().get_spawn_points()
 
@@ -175,6 +198,22 @@ def run_visual_experiment():
             benign_vehicle.apply_control(benign_control)
             attack_vehicle.apply_control(applied_attack)
 
+            send_can_control(
+                            bus,
+                            msg_def,
+                            benign_control.steer,
+                            benign_control.throttle,
+                            benign_control.brake,
+                        )
+            send_can_control(
+                            bus,
+                            msg_def,
+                            applied_attack.steer,
+                            applied_attack.throttle,
+                            applied_attack.brake,
+                        )
+ 
+
             update_spectator_topdown(world, attack_vehicle)
 
             benign_loc = benign_vehicle.get_location()
@@ -194,6 +233,8 @@ def run_visual_experiment():
                 "tick": tick,
                 "time": round(sim_time_now, 6),
                 "agent_steer": attack_control.steer,
+                "agent_throttle": attack_control.throttle,
+                "agent_brake": attack_control.brake,
                 "applied_throttle": applied_attack.throttle,
                 "applied_steer": applied_attack.steer,
                 "applied_brake": applied_attack.brake,
@@ -230,8 +271,12 @@ def run_visual_experiment():
         write_csv(
             ATTACK_CSV,
             attack_rows,
-            ["tick", "time", "agent_steer", "applied_throttle", "applied_steer", "applied_brake", "attack_active", "x", "y", "z"],
-        )
+            [
+                "tick", "time",
+                "agent_throttle", "agent_steer", "agent_brake",
+                "applied_throttle", "applied_steer", "applied_brake",
+                "attack_active", "x", "y", "z"
+            ])
         write_csv(
             DIST_CSV,
             dist_rows,
@@ -241,6 +286,11 @@ def run_visual_experiment():
         print(f"Saved outputs in: {OUT_DIR.resolve()}")
 
     finally:
+        try:
+            bus.shutdown()
+        except Exception:
+            pass
+
         try:
             settings = world.get_settings()
             settings.synchronous_mode = False
