@@ -33,6 +33,8 @@ DIST_CSV = OUT_DIR / "visual_distance.csv"
 
 PATH_PNG = OUT_DIR / "visual_paths.png"
 STEER_PNG = OUT_DIR / "visual_steer.png"
+THROTTLE_PNG = OUT_DIR / "visual_throttle.png"
+BRAKE_PNG = OUT_DIR / "visual_brake.png"
 DIST_PNG = OUT_DIR / "visual_distance.png"
 DBC_FILE = Path(__file__).resolve().parent / "dbc_input.dbc"
 
@@ -111,6 +113,46 @@ def plot_outputs(benign_rows, attack_rows, dist_rows):
     plt.legend()
     plt.tight_layout()
     plt.savefig(STEER_PNG)
+    plt.close()
+
+    # throttle timeline
+    plt.figure()
+    plt.plot(
+        [r["time"] for r in benign_rows],
+        [r["applied_throttle"] for r in benign_rows],
+        label="benign applied throttle"
+    )
+    plt.plot(
+        [r["time"] for r in attack_rows],
+        [r["applied_throttle"] for r in attack_rows],
+        label="attack applied throttle"
+    )
+    plt.xlabel("time (s)")
+    plt.ylabel("throttle")
+    plt.title("Applied throttle over time")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(THROTTLE_PNG)
+    plt.close()
+
+    # brake timeline
+    plt.figure()
+    plt.plot(
+        [r["time"] for r in benign_rows],
+        [r["applied_brake"] for r in benign_rows],
+        label="benign applied brake"
+    )
+    plt.plot(
+        [r["time"] for r in attack_rows],
+        [r["applied_brake"] for r in attack_rows],
+        label="attack applied brake"
+    )
+    plt.xlabel("time (s)")
+    plt.ylabel("brake")
+    plt.title("Applied brake over time")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(BRAKE_PNG)
     plt.close()
 
     # distance timeline
